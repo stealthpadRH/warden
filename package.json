@@ -1,0 +1,24 @@
+{
+  "name": "stealthpad-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "abi": "node scripts/export-abi.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "tsx src/checks.ts",
+    "verify": "tsx src/verify.ts"
+  },
+  "packageManager": "pnpm@10.26.2",
+  "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.8",
+    "postgres": "^3.4.9",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

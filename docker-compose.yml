@@ -1,0 +1,85 @@
+# stealthpad-warden on a single VPS: the worker plus its PostgreSQL, on a private network.
+#
+#   cp .env.example .env        # fill FACTORY, START_BLOCK, keys, POSTGRES_PASSWORD (URL-safe characters)
+#   docker compose up -d --build
+#   docker compose logs -f warden
+#
+# Hardening, all verifiable after `up` with `docker inspect`:
+#   - the worker runs as the image's `node` user (uid 1000), never root
+#   - read-only root filesystem; only /tmp is writable (tmpfs, for the TypeScript loader's cache)
+#   - all Linux capabilities dropped, no-new-privileges
+#   - no docker.sock mount, no published ports on either service
+#   - PostgreSQL sits on an internal network with no route to the internet
+#
+# Using managed PostgreSQL instead: delete the `db` service and `depends_on`, and set DATABASE_URL
+# in .env to the managed instance (TLS on). The worker keeps only the `egress` network.
+
+name: stealthpad-warden
+
+services:
+  warden:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stealthpad-warden:0.1.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://stealthpad:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/stealthpad
+      TMPDIR: /tmp
+      NODE_ENV: production
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal # reaches db
+      - egress # reaches the Robinhood Chain RPC
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stealthpad
+      POSTGRES_DB: stealthpad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # no `ports:` on purpose: the database is reachable only from the internal network
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stealthpad -d stealthpad"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal:
+    internal: true
+  egress: {}
+
+volumes:
+  pgdata:
